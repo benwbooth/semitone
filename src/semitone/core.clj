@@ -3,8 +3,6 @@
 ;; TODO:
 ;;   displacement syntax < >
 ;;   MPE support
-;;   :transpose
-;;   :time-signature
 
 (ns semitone.core)
 
@@ -62,7 +60,6 @@
                           :notes (rest notes)}))
           (if-let [m (re-matches #"([-=])[-=]*" (name length))]
             (do 
-              (pprint m)
               (merge state {:repeat-length (* (:length state) (count (name length)))
                             :key (if (= "=" (get m 1)) (:key state) nil)
                             :notes (rest notes)}))
@@ -241,7 +238,10 @@
                                     (MidiEvent. (ShortMessage.
                                                  (:key-type state)
                                                  (:channel state)
-                                                 (:key state)
+                                                 (+ (:key state)
+                                                    (if (or (= (:key-type state) ShortMessage/NOTE_ON)
+                                                            (= (:key-type state) ShortMessage/POLY_PRESSURE))
+                                                      (:transpose state) 0))
                                                  value)
                                                 (:position state))))
                             (when (and (= (:key-type state) ShortMessage/NOTE_ON) (not (= (:tie state) :begin)))
