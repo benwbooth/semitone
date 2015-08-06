@@ -6,3 +6,10 @@
        :version "0.1.0"}
   jar {:main 'semitone.core}
   aot {:all true})
+
+(require 'semitone.core)
+
+(deftask run []
+  (with-pre-wrap fileset
+    (semitone.core/-main)
+    fileset))
