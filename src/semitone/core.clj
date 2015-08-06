@@ -61,9 +61,11 @@
                           :repeat-length 0
                           :notes (rest notes)}))
           (if-let [m (re-matches #"([-=])[-=]*" (name length))]
-            (merge state {:repeat-length (* (:length state) (count (name length)))
-                          :key (if (= "=" (get m 1)) (:key state) nil)
-                          :notes (rest notes)})
+            (do 
+              (pprint m)
+              (merge state {:repeat-length (* (:length state) (count (name length)))
+                            :key (if (= "=" (get m 1)) (:key state) nil)
+                            :notes (rest notes)}))
             state))
         :else state))))
 
@@ -75,21 +77,22 @@
       (merge state {:key (first notes) :notes (rest notes)})
       (let [note (clojure.string/replace (name (first notes)) #"__[0-9]+__auto__$" "#")]
         ;; note on/off / key pressure by key name
-        (if-let [m (re-matches #"(&|-|)([a-gA-G])(#|##|b|bb|n|)(-|)" note)]
+        (if-let [m (re-matches #"(&|-|)([a-gA-G])(#|##|b|bb|n|)(-?[0-9]+|)(-|)" note)]
           (let [note-map {"C" -12 "D" -10 "E" -8 "F" -7 "G" -5 "A" -3 "B" -1
                           "c" 0 "d" 2 "e" 4 "f" 5 "g" 7 "a" 9 "b" 11}
                 accidental-map {"#" 1 "##" 2 "b" -1 "bb" -2 "n" 0 "" nil}
                 key-pressure (= "&" (get m 1))
                 key (get note-map (get m 2))
+                octave (if (= "" (get m 4)) (:octave state) (Integer. (get m 4)))
                 accidental (or (get accidental-map (get m 3))
                                (get (:key-signature state) (clojure.string/lower-case (get m 2)))
                                0)]
             (merge state {:key-type (if key-pressure ShortMessage/POLY_PRESSURE ShortMessage/NOTE_ON)
                           :tie (cond
                                  (= "-" (get m 1)) :end
-                                 (= "-" (get m 4)) :begin
+                                 (= "-" (get m 5)) :begin
                                  :else nil)
-                          :key (mod (+ (* (+ 1 (:octave state)) 12) key accidental) 128)
+                          :key (mod (+ (* (+ 1 octave) 12) key accidental) 128)
                           :param (if key-pressure :key-pressure :octave)
                           :notes (rest notes)}))
           ;; cc
@@ -138,7 +141,7 @@
                            {:key-type ShortMessage/NOTE_ON
                             :tie (cond
                                    (= "-k" (get m 1)) :end
-                                   (= "-" (get m 4)) :begin
+                                   (= "-" (get m 5)) :begin
                                    :else nil)
                             param value
                             :param param}
@@ -198,7 +201,7 @@
                       :cc-value 0
                       :tempo 120
                       :length (.getResolution (.getSequence sequencer))
-                      :repeat-length 0}
+                      :repeat-length (.getResolution (.getSequence sequencer))}
                      (or state {}))]
     (loop [notes notes state state]
       (if (not (empty? notes))
@@ -325,6 +328,6 @@
 
   ;; add some music to the sequencer and start
   ;; (pprint (play sequencer `(:tempo 120 i c d e f g a b > c)))
-  (pprint (play sequencer `(=== == =)))
+  (pprint (play sequencer `(c - d - e - f - g)))
   (println (.getSequence sequencer)))
 
