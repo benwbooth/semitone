@@ -45,6 +45,7 @@
         (= (type length) clojure.lang.Ratio)
         (merge state {:key (if (< length 0) nil (:key state))
                       :length (Math/abs (* 4.0 length ppq))
+                      :repeat-length 0
                       :notes (rest notes)})
         (symbol? length)
         (if-let [m (re-matches #"(-|)((?:[xwhqistjlmno]\.*)+)" (name length))]
@@ -57,9 +58,10 @@
                                                    (- 2.0 (/ 1.0 (reduce * (repeat (count (get % 2)) 2))))
                                                    ppq)
                                                (re-seq #"\G([xwhqistjlmno])(\.*)" (get m 2))))
+                          :repeat-length 0
                           :notes (rest notes)}))
           (if-let [m (re-matches #"([-=])[-=]*" (name length))]
-            (merge state {:length (* (:length state) (count (name length)))
+            (merge state {:repeat-length (* (:length state) (count (name length)))
                           :key (if (= "=" (get m 1)) (:key state) nil)
                           :notes (rest notes)})
             state))
@@ -195,7 +197,8 @@
                       :param :octave
                       :cc-value 0
                       :tempo 120
-                      :length (.getResolution (.getSequence sequencer))}
+                      :length (.getResolution (.getSequence sequencer))
+                      :repeat-length 0}
                      (or state {}))]
     (loop [notes notes state state]
       (if (not (empty? notes))
@@ -244,12 +247,15 @@
                                                        (:channel state)
                                                        (:key state)
                                                        (:release state))
-                                                      (+ (:position state) (:length state) (:displacement state))))))
+                                                      (+ (:position state)
+                                                         (or (:repeat-length state) (:length state))
+                                                         (:displacement state))))))
                           :else nil)
                         state))]
                 (merge state {:position (if (vector? notes)
                                           (:position state)
-                                          (+ (:position state) (:length state)))}))
+                                          (+ (:position state)
+                                             (or (:repeat-length state) (:length state))))}))
               notes (:notes state)]
           (recur notes state))
         state))))
