@@ -1,9 +1,17 @@
 #!/usr/bin/env boot
 
+;; TODO:
+;;   displacement syntax < >
+;;   MPE support
+;;   :transpose
+;;   :time-signature
+
 (ns semitone.core)
 
-(import [javax.sound.midi 
-         MidiSystem MidiMessage MetaMessage MetaEventListener 
+(use '[clojure.pprint :only [pprint]])
+
+(import [javax.sound.midi
+         MidiSystem MidiMessage MetaMessage MetaEventListener
          SysexMessage ShortMessage Sequencer Sequence MidiEvent Track]
         [java.nio ByteBuffer])
 
@@ -13,16 +21,21 @@
     (if (map? (first notes))
       (do
         (when (contains? (first notes) :tempo)
-          (let [track (get (.getTracks (.getSequence (:sequencer state))) (:track state))]
-            (.add (:track state)
+          (let [track (aget (.getTracks (.getSequence (:sequencer state))) (:track state))]
+            (.add track
                   (MidiEvent.
                    (MetaMessage. 0x51
-                                 (.array (.putInt (ByteBuffer/allocate 3) (int (* (/ 1 (get (first notes) :tempo)) 60 1e6)))) 3)
+                                 (.array
+                                  (.put (ByteBuffer/allocate 3)
+                                        (.array (.putInt
+                                                 (ByteBuffer/allocate 4)
+                                                 (int (* (/ 1 (get (first notes) :tempo)) 60 1e6))))
+                                        1 3))
+                                 3)
                    (:position state))))
           (merge state (first notes) {:notes (rest notes)})))
       state)))
 
-;; TODO: displacement syntax < >
 (defn parse-length [notes state]
   (if (empty? notes)
     state
@@ -34,16 +47,16 @@
                       :length (Math/abs (* 4.0 length ppq))
                       :notes (rest notes)})
         (symbol? length)
-        (if-let [m (re-matches #"(-|)((?:[dwhqistxofjk]\.*)+)" (name length))]
-          (let [length-map {"d" 2 "w" 1 "h" 1/2 "q" 1/4 "i" 1/8 "s" 1/16 "t" 1/32
-                            "x" 1/64 "o" 1/128 "f" 1/256 "j" 1/512 "k" 1/1024}]
+        (if-let [m (re-matches #"(-|)((?:[xwhqistjlmno]\.*)+)" (name length))]
+          (let [length-map {"x" 2 "w" 1 "h" 1/2 "q" 1/4 "i" 1/8 "s" 1/16 "t" 1/32
+                            "j" 1/64 "l" 1/128 "m" 1/256 "n" 1/512 "o" 1/1024}]
             (merge state {:key (if (= "-" (get m 1)) nil (:key state))
                           :length (reduce +
                                           (map #(* 4.0
                                                    (get length-map (get % 1))
                                                    (- 2.0 (/ 1.0 (reduce * (repeat (count (get % 2)) 2))))
                                                    ppq)
-                                               (re-seq #"\G([dwhqistxofjk])(\.*)" (get m 2))))
+                                               (re-seq #"\G([xwhqistjlmno])(\.*)" (get m 2))))
                           :notes (rest notes)}))
           (if-let [m (re-matches #"([-=])[-=]*" (name length))]
             (merge state {:length (* (:length state) (count (name length)))
@@ -90,11 +103,13 @@
                             :param nil
                             :notes (rest notes)})
               ;; channel pressure, pitch bend, note on/off / key pressure by key number
-              (if-let [m (re-matches #"(&&|\^|&k|k|-k)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*|)(?:[eE]-?[0-9]+)?)?(-|)" note)]
+              (if-let [m (re-matches #"(&&|\^|&k|k|-k)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|)(-|)" note)]
                 (let [max-value (if (= "^" (get m 1)) 16384 128)
                       value (if (re-find #"[.eE]" (get m 3))
                               (max 0 (min max-value (int (* (Double. (get m 3)) max-value))))
-                              (mod (Integer. (get m 3)) max-value))
+                              (mod (if (= "" (get m 3))
+                                     (if (= "" (get m 2)) 0 1)
+                                     (Integer. (get m 3))) max-value))
                       param ({"&&" :channel-pressure "^" :pitch-bend "&k" :key-pressure "k" :key} (get m 1))
                       old-value (get state param)
                       value (cond
@@ -134,22 +149,26 @@
     state
     (let [token (first notes)
           token (if (or (= (type token) Long) (= (type token) Double)) (str token) (name token))]
-      (if (re-matches #"((!|\?|&|)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*|)(?:[eE]-?[0-9]+)?)?)+" token)
+      (if (re-matches #"((!|\?|&|)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|))+" token)
         (merge
          (apply merge state
-                (map #(let [param (get {"!" :attack  "?" :release "&" :key-pressure} (get % 1) (:param state))
-                            max-value (if (= param :pitch-bend) 16384 128)
-                            value (if (re-find #"[.eE]" (get % 3))
-                                    (if (= param :pitch-bend)
-                                      (max 0 (min max-value (int (* (/ (+ 1.0 (Double. (get % 3))) 2.0) max-value))))
-                                      (max 0 (min max-value (int (* (Double. (get % 3)) max-value)))))
-                                    (mod (Integer. (get % 3)) max-value))
-                            value (cond
-                                    (= \> (get (get % 2) 0)) (mod (+ (param state) (or value 0) (- (count (get % 2)) 1)) max-value)
-                                    (= \< (get (get % 2) 0)) (mod (- (param state) (or value 0) (- (count (get % 2)) 1)) max-value)
-                                    :else value)]
-                        {param value})
-                     (re-seq #"\G(!|\?|&|@|)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*|)(?:[eE]-?[0-9]+)?)?" token)))
+                (mapcat #(if (= "" (get % 0)) []
+                             (let [param (get {"!" :attack  "?" :release "&" :key-pressure} (get % 1) (:param state))
+                                   old-value (get state param)
+                                   max-value (if (= param :pitch-bend) 16384 128)
+                                   value (if (re-find #"[.eE]" (get % 3))
+                                           (if (= param :pitch-bend)
+                                             (max 0 (min max-value (int (* (/ (+ 1.0 (Double. (get % 3))) 2.0) max-value))))
+                                             (max 0 (min max-value (int (* (Double. (get % 3)) max-value)))))
+                                           (mod (if (= "" (get % 3))
+                                                  (if (= "" (get % 2)) 0 1)
+                                                  (Integer. (get % 3))) max-value))
+                                   value (cond
+                                           (= \> (get (get % 2) 0)) (mod (+ old-value (or value 0) (- (count (get % 2)) 1)) max-value)
+                                           (= \< (get (get % 2) 0)) (mod (- old-value (or value 0) (- (count (get % 2)) 1)) max-value)
+                                           :else value)]
+                               [{param value}]))
+                     (re-seq #"\G(!|\?|&|@|)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|)" token)))
          {:notes (rest notes)})
         state))))
 
@@ -159,17 +178,19 @@
                       :notes notes
                       :displacement 0
                       :attack 64
-                      :release 64
+                      :release 0
                       :channel-pressure 0
                       :pitch-bend 8192
                       :key-pressure 0
                       :position (.getTickPosition sequencer)
                       :tie nil
-                      :key 0
+                      :key 60
                       :key-type ShortMessage/NOTE_ON
                       :channel 0
                       :track 0
                       :key-signature {}
+                      :time-signature [4 4]
+                      :transpose 0
                       :octave 4
                       :param :octave
                       :cc-value 0
@@ -187,19 +208,21 @@
                              {:notes (rest notes)}
                              (if (vector? notes) {:position position} {}))
                       (map? (first notes))
-                      (parse-state (first notes) state)
+                      (parse-state notes state)
+                      (keyword? (first notes))
+                      (parse-state (cons {(first notes) (first (rest notes))} (rest (rest notes))) state)
                       :else
                       (let [notes (:notes state)
+                            state (parse-param (:notes state) state)
                             state (parse-length (:notes state) state)
                             state (parse-note (:notes state) state)
-                            state (parse-param (:notes state) state)
                             value (get {ShortMessage/NOTE_ON (:attack state)
                                         ShortMessage/CHANNEL_PRESSURE (:channel-pressure state)
                                         ShortMessage/CONTROL_CHANGE (:cc-change state)
                                         ShortMessage/PITCH_BEND (:pitch-bend state)
                                         ShortMessage/POLY_PRESSURE (:key-pressure state)}
                                        (:key-type state) 0)
-                            track (get (.getTracks (.getSequence (:sequencer state))) (:track state))]
+                            track (aget (.getTracks (.getSequence (:sequencer state))) (:track state))]
                         (when (= (count notes) (count (:notes state)))
                           (throw (Exception. (format "Couldn't parse note: %s" (str (first notes))))))
                         (cond
@@ -232,20 +255,54 @@
         state))))
 
 (defn play [sequencer notes & [state]]
-  (compose sequencer notes state)
-  ;; wait for sequencer to finish playing
-  (.start sequencer)
-  (while (.isRunning sequencer) (Thread/sleep 250)))
+  (let [state (compose sequencer notes state)]
+    ;; wait for sequencer to finish playing
+    (.start sequencer)
+    (while (.isRunning sequencer) (Thread/sleep 100))
+    state))
+
+(defmethod print-method Sequence [sequence writer]
+  (doseq [t (range (alength (.getTracks sequence)))]
+    (let [track (aget (.getTracks sequence) t)]
+      (doseq [e (range (.size track))]
+        (let [event (.get track e)
+              tick (.getTick event)
+              message (.getMessage event)]
+          (cond
+            (= (type message) ShortMessage)
+            (print-simple (format "Track %d: tick %d: ShortMessage(channel=%d, command=%s, data1=%d, data2=%d)\n"
+                                  t tick
+                                  (.getChannel message)
+                                  (get {ShortMessage/CHANNEL_PRESSURE "CHANNEL_PRESSURE"
+                                        ShortMessage/CONTROL_CHANGE "CONTROL_CHANGE"
+                                        ShortMessage/NOTE_OFF "NOTE_OFF"
+                                        ShortMessage/NOTE_ON "NOTE_ON"
+                                        ShortMessage/PITCH_BEND "PITCH_BEND"
+                                        ShortMessage/POLY_PRESSURE "POLY_PRESSURE"
+                                        ShortMessage/PROGRAM_CHANGE "PROGRAM_CHANGE"}
+                                       (.getCommand message)
+                                       (str (.getCommand message)))
+                                  (.getData1 message)
+                                  (.getData2 message)) writer)
+            (= (type message) MetaMessage)
+            (print-simple (format "Track %d: tick %d: MetaMessage(type=%x, data=%s)\n"
+                                  t tick
+                                  (.getType message)
+                                  (clojure.string/join "," (.getData message))) writer)
+            (= (type message) SysexMessage)
+            (print-simple (format "Track %d: tick %d: SysexMessage(data=%s)\n"
+                                  t tick
+                                  (clojure.string/join "," (.getData message))) writer)
+            :else (print-simple (format "Track %d: tick %d: %s()"
+                                        t tick (type message)) writer)))))))
 
 (defn -main [& args]
-  (println "Try to play sequence")
-
   ;; initialize the sequencer
   (def sequencer (MidiSystem/getSequencer))
   (.addMetaEventListener sequencer
                         (reify MetaEventListener
                           (meta [meta]
-                            (.setTempoInMPQ sequencer (float (.getInt (.put (ByteBuffer/allocate 3) (.getData meta))))))))
+                            (.setTempoInMPQ sequencer (float (.getInt (.put (ByteBuffer/allocate 4) (.getData meta) 1 3)))))))
   (.setSequence sequencer (Sequence. Sequence/PPQ 256))
   (.createTrack (.getSequence sequencer))
   (.open sequencer)
@@ -255,11 +312,13 @@
   (.open synth)
   (.setReceiver (.getTransmitter sequencer) (.getReceiver synth))
 
-  ;; set sequncer to loop continuously
+  ;; set sequencer to loop continuously
   ;; (.setLoopStartPoint sequencer 0)
   ;; (.setLoopEndPoint sequencer -1)
   ;; (.setLoopCount sequencer Sequencer/LOOP_CONTINUOUSLY)
 
   ;; add some music to the sequencer and start
-  (play sequencer `(c d e f g a b)))
+  ;; (pprint (play sequencer `(:tempo 120 i c d e f g a b > c)))
+  (pprint (play sequencer `(=== == =)))
+  (println (.getSequence sequencer)))
 
