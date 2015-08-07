@@ -3,15 +3,15 @@
 ;; TODO:
 ;;   displacement syntax < >
 ;;   MPE support
+;;   :time-signature
 
-(ns semitone.core)
-
-(use '[clojure.pprint :only [pprint]])
-
-(import [javax.sound.midi
-         MidiSystem MidiMessage MetaMessage MetaEventListener
-         SysexMessage ShortMessage Sequencer Sequence MidiEvent Track]
-        [java.nio ByteBuffer])
+(ns semitone.core
+  (:require [clojure.pprint :refer [pprint]]
+            [clojure.stacktrace :refer :all])
+  (:import [javax.sound.midi
+            MidiSystem MidiMessage MetaMessage MetaEventListener
+            SysexMessage ShortMessage Sequencer Sequence MidiEvent Track]
+           [java.nio ByteBuffer]))
 
 (defn parse-state [notes state]
   (if (empty? notes)
@@ -43,7 +43,7 @@
         (= (type length) clojure.lang.Ratio)
         (merge state {:key (if (< length 0) nil (:key state))
                       :length (Math/abs (* 4.0 length ppq))
-                      :repeat-length 0
+                      :repeat-length nil
                       :notes (rest notes)})
         (symbol? length)
         (if-let [m (re-matches #"(-|)((?:[xwhqistjlmno]\.*)+)" (name length))]
@@ -56,7 +56,7 @@
                                                    (- 2.0 (/ 1.0 (reduce * (repeat (count (get % 2)) 2))))
                                                    ppq)
                                                (re-seq #"\G([xwhqistjlmno])(\.*)" (get m 2))))
-                          :repeat-length 0
+                          :repeat-length nil
                           :notes (rest notes)}))
           (if-let [m (re-matches #"([-=])[-=]*" (name length))]
             (do 
@@ -174,12 +174,27 @@
          {:notes (rest notes)})
         state))))
 
-(defn compose [sequencer notes & [state]]
-  (let [notes (if (or (vector? notes) (seq? notes)) notes (seq notes))
+(defn make-sequencer [& [sequence]]
+  (let [sequence (or sequence (Sequence. Sequence/PPQ 256))
+        sequencer (MidiSystem/getSequencer)]
+    (.addMetaEventListener sequencer
+                           (reify MetaEventListener
+                             (meta [meta]
+                               (.setTempoInMPQ sequencer (float (.getInt (.put (ByteBuffer/allocate 4) (.getData meta) 1 3)))))))
+    (.setSequence sequencer sequence)
+    (.createTrack (.getSequence sequencer))
+    (.open sequencer)
+    sequencer))
+
+(def ^:dynamic *seq* (Sequence. Sequence/PPQ 256))
+(def ^:dynamic *sequencer* (make-sequencer *seq*))
+
+(defn compose [notes & [sequencer state]]
+  (let [sequencer (or sequencer *sequencer*)
+        notes (if (or (vector? notes) (seq? notes)) notes (list notes))
         state (merge {:sequencer sequencer
-                      :notes notes
                       :displacement 0
-                      :attack 64
+                      :attack 127
                       :release 0
                       :channel-pressure 0
                       :pitch-bend 8192
@@ -198,16 +213,15 @@
                       :cc-value 0
                       :tempo 120
                       :length (.getResolution (.getSequence sequencer))
-                      :repeat-length (.getResolution (.getSequence sequencer))}
-                     (or state {}))]
+                      :repeat-length nil}
+                     (or state {})
+                     {:notes notes})]
     (loop [notes notes state state]
       (if (not (empty? notes))
-        (let [state
-              (let [position (:position state)
-                    state
-                    (cond
+        (let [position (:position state)
+              state (cond
                       (or (seq? (first notes)) (vector? (first notes)))
-                      (merge (compose (first notes) state)
+                      (merge (compose (first notes) sequencer state)
                              {:notes (rest notes)}
                              (if (vector? notes) {:position position} {}))
                       (map? (first notes))
@@ -218,7 +232,7 @@
                       (let [notes (:notes state)
                             state (parse-param (:notes state) state)
                             state (parse-length (:notes state) state)
-                            state (parse-note (:notes state) state)
+                            state (if (nil? (:repeat-length state)) (parse-note (:notes state) state) state)
                             value (get {ShortMessage/NOTE_ON (:attack state)
                                         ShortMessage/CHANNEL_PRESSURE (:channel-pressure state)
                                         ShortMessage/CONTROL_CHANGE (:cc-change state)
@@ -227,7 +241,7 @@
                                        (:key-type state) 0)
                             track (aget (.getTracks (.getSequence (:sequencer state))) (:track state))]
                         (when (= (count notes) (count (:notes state)))
-                          (throw (Exception. (format "Couldn't parse note: %s" (str (first notes))))))
+                          (throw (Exception. (format "Could not parse note: %s" (str (first notes))))))
                         (cond
                           (and (not (nil? (:key state))) (= (type (:key state)) MidiMessage))
                           (.add track (MidiEvent. (:key state) (:position state)))
@@ -253,22 +267,27 @@
                                                       (+ (:position state)
                                                          (or (:repeat-length state) (:length state))
                                                          (:displacement state))))))
-                          :else nil)
-                        state))]
-                (merge state {:position (if (vector? notes)
-                                          (:position state)
-                                          (+ (:position state)
-                                             (or (:repeat-length state) (:length state))))}))
+                          :else
+                          (throw (Exception. (format "Could not parse key: %s" key))))
+                        (merge state {:position (+ (:position state) (or (:repeat-length state) (:length state)))})))
               notes (:notes state)]
-          (recur notes state))
+          (recur notes (merge state {:repeat-length nil})))
         state))))
 
-(defn play [sequencer notes & [state]]
-  (let [state (compose sequencer notes state)]
-    ;; wait for sequencer to finish playing
+(defn play [& [notes sequencer state]]
+  (let [sequencer (or sequencer *sequencer*)
+        state (compose (or notes '()) sequencer state)]
+    (when (nil? notes)
+      (.setTickPosition sequencer 0))
     (.start sequencer)
-    (while (.isRunning sequencer) (Thread/sleep 100))
-    state))
+    (while (.isRunning sequencer) (Thread/sleep 100))))
+
+(defn clear [& sequence]
+  (let [sequence (or sequence (.getSequence *sequencer*))]
+    (doseq [track (.getTracks sequence)]
+      (doseq [e (range (- (.size track) 2) -1 -1)]
+        (let [event (.get track e)]
+            (.remove track event))))))
 
 (defmethod print-method Sequence [sequence writer]
   (doseq [t (range (alength (.getTracks sequence)))]
@@ -305,29 +324,5 @@
             :else (print-simple (format "Track %d: tick %d: %s()"
                                         t tick (type message)) writer)))))))
 
-(defn -main [& args]
-  ;; initialize the sequencer
-  (def sequencer (MidiSystem/getSequencer))
-  (.addMetaEventListener sequencer
-                        (reify MetaEventListener
-                          (meta [meta]
-                            (.setTempoInMPQ sequencer (float (.getInt (.put (ByteBuffer/allocate 4) (.getData meta) 1 3)))))))
-  (.setSequence sequencer (Sequence. Sequence/PPQ 256))
-  (.createTrack (.getSequence sequencer))
-  (.open sequencer)
-
-  ;; initialize the synth and connect to sequencer
-  (def synth (MidiSystem/getSynthesizer))
-  (.open synth)
-  (.setReceiver (.getTransmitter sequencer) (.getReceiver synth))
-
-  ;; set sequencer to loop continuously
-  ;; (.setLoopStartPoint sequencer 0)
-  ;; (.setLoopEndPoint sequencer -1)
-  ;; (.setLoopCount sequencer Sequencer/LOOP_CONTINUOUSLY)
-
-  ;; add some music to the sequencer and start
-  ;; (pprint (play sequencer `(:tempo 120 i c d e f g a b > c)))
-  (pprint (play sequencer `(c - d - e - f - g)))
-  (println (.getSequence sequencer)))
-
+(defn run-test []
+  (play `(c d e f g a b > c)))
