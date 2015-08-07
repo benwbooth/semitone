@@ -13,6 +13,11 @@
             SysexMessage ShortMessage Sequencer Sequence MidiEvent Track]
            [java.nio ByteBuffer]))
 
+(defn vec-rest [coll]
+  (if (vector? coll)
+    (vec (clojure.core/rest coll))
+    (clojure.core/rest coll)))
+
 (defn parse-state [notes state]
   (if (empty? notes)
     state
@@ -31,7 +36,7 @@
                                         1 3))
                                  3)
                    (:position state))))
-          (merge state (first notes) {:notes (rest notes)})))
+          (merge state (first notes) {:notes (vec-rest notes)})))
       state)))
 
 (defn parse-length [notes state]
@@ -44,7 +49,7 @@
         (merge state {:key (if (< length 0) nil (:key state))
                       :length (Math/abs (* 4.0 length ppq))
                       :repeat-length nil
-                      :notes (rest notes)})
+                      :notes (vec-rest notes)})
         (symbol? length)
         (if-let [m (re-matches #"(-|)((?:[xwhqistjlmno]\.*)+)" (name length))]
           (let [length-map {"x" 2 "w" 1 "h" 1/2 "q" 1/4 "i" 1/8 "s" 1/16 "t" 1/32
@@ -57,12 +62,12 @@
                                                    ppq)
                                                (re-seq #"\G([xwhqistjlmno])(\.*)" (get m 2))))
                           :repeat-length nil
-                          :notes (rest notes)}))
+                          :notes (vec-rest notes)}))
           (if-let [m (re-matches #"([-=])[-=]*" (name length))]
             (do 
               (merge state {:repeat-length (* (:length state) (count (name length)))
                             :key (if (= "=" (get m 1)) (:key state) nil)
-                            :notes (rest notes)}))
+                            :notes (vec-rest notes)}))
             state))
         :else state))))
 
@@ -71,7 +76,7 @@
   (if (empty? notes)
     state
     (if (= (type (first notes)) MidiMessage)
-      (merge state {:key (first notes) :notes (rest notes)})
+      (merge state {:key (first notes) :notes (vec-rest notes)})
       (let [note (clojure.string/replace (name (first notes)) #"__[0-9]+__auto__$" "#")]
         ;; note on/off / key pressure by key name
         (if-let [m (re-matches #"(&|-|)([a-gA-G])(#|##|b|bb|n|)(-?[0-9]+|)(-|)" note)]
@@ -91,19 +96,19 @@
                                  :else nil)
                           :key (mod (+ (* (+ 1 octave) 12) key accidental) 128)
                           :param (if key-pressure :key-pressure :octave)
-                          :notes (rest notes)}))
+                          :notes (vec-rest notes)}))
           ;; cc
           (if-let [m (re-matches #"cc([0-9]+)" note)]
             (merge state {:key-type ShortMessage/CONTROL_CHANGE
                           :key (mod (Integer. (get m 1)) 128)
                           :param :cc-value
-                          :notes (rest notes)})
+                          :notes (vec-rest notes)})
             ;; program change
             (if-let [m (re-matches #"prog([0-9]+)" note)]
               (merge state {:key-type ShortMessage/PROGRAM_CHANGE
                             :key (mod (Integer. (get m 1)) 128)
                             :param nil
-                            :notes (rest notes)})
+                            :notes (vec-rest notes)})
               ;; channel pressure, pitch bend, note on/off / key pressure by key number
               (if-let [m (re-matches #"(&&|\^|&k|k|-k)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|)(-|)" note)]
                 (let [max-value (if (= "^" (get m 1)) 16384 128)
@@ -143,7 +148,7 @@
                             param value
                             :param param}
                            :else (throw (Exception. (format "Unhandled message: %s" (get m 1)))))
-                         {:notes (rest notes)}))
+                         {:notes (vec-rest notes)}))
                 state))))))))
 
 (defn parse-param [notes state]
@@ -171,7 +176,7 @@
                                            :else value)]
                                [{param value}]))
                      (re-seq #"\G(!|\?|&|@|)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|)" token)))
-         {:notes (rest notes)})
+         {:notes (vec-rest notes)})
         state))))
 
 (defn make-sequencer [& [sequence]]
@@ -222,12 +227,12 @@
               state (cond
                       (or (seq? (first notes)) (vector? (first notes)))
                       (merge (compose (first notes) sequencer state)
-                             {:notes (rest notes)}
+                             {:notes (vec-rest notes)}
                              (if (vector? notes) {:position position} {}))
                       (map? (first notes))
                       (parse-state notes state)
                       (keyword? (first notes))
-                      (parse-state (cons {(first notes) (first (rest notes))} (rest (rest notes))) state)
+                      (parse-state (cons {(first notes) (first (vec-rest notes))} (vec-rest (vec-rest notes))) state)
                       :else
                       (let [notes (:notes state)
                             state (parse-param (:notes state) state)
@@ -269,7 +274,10 @@
                                                          (:displacement state))))))
                           :else
                           (throw (Exception. (format "Could not parse key: %s" key))))
-                        (merge state {:position (+ (:position state) (or (:repeat-length state) (:length state)))})))
+                        (merge state {:position
+                                      (if (vector? (:notes state))
+                                        (:position state)
+                                        (+ (:position state) (or (:repeat-length state) (:length state))))})))
               notes (:notes state)]
           (recur notes (merge state {:repeat-length nil})))
         state))))
