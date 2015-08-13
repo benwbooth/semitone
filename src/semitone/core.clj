@@ -89,7 +89,7 @@
                 accidental-map {"#" 1 "##" 2 "b" -1 "bb" -2 "n" 0 "" nil}
                 key-pressure (= "&" (get m 1))
                 key (get note-map (get m 2))
-                octave (if (= "" (get m 4)) (:octave state) (Integer. (get m 4)))
+                note-octave (if (= "" (get m 4)) nil (Integer. (get m 4)))
                 accidental (or (get accidental-map (get m 3))
                                (get (:key-signature state) (clojure.string/lower-case (get m 2)))
                                0)]
@@ -98,7 +98,8 @@
                                  (= "-" (get m 1)) :end
                                  (= "-" (get m 5)) :begin
                                  :else nil)
-                          :key (mod (+ (* (+ 1 octave) 12) key accidental) 128)
+                          :key (+ key accidental)
+                          :note-octave note-octave
                           :param (if key-pressure :key-pressure :octave)
                           :notes (vec-rest notes)}))
           ;; cc
@@ -227,6 +228,7 @@
                       :time-signature [4 4]
                       :transpose 0
                       :octave 4
+                      :note-octave nil
                       :param :octave
                       :cc-value 0
                       :tempo 120
@@ -243,22 +245,35 @@
                              {:notes (vec-rest notes)})
                       (map? (first notes))
                       (parse-state notes state)
-                      (keyword? (first notes))
+                      (and (keyword? (first notes))
+                           (not (empty? (vec-rest notes))))
                       (parse-state (cons {(first notes) (first (vec-rest notes))} (vec-rest (vec-rest notes))) state)
                       :else
                       (let [notes (:notes state)
-                            state (parse-param (:notes state) state)
                             state (parse-length (:notes state) state)
                             state (if (nil? (:repeat-length state)) (parse-note (:notes state) state) state)
+                            state (parse-param (:notes state) state)
+                            key (cond
+                                  (or (= (:key-type state) ShortMessage/NOTE_ON)
+                                      (= (:key-type state) ShortMessage/POLY_PRESSURE))
+                                  (mod (+ (:key state)
+                                          (:transpose state)
+                                          (* (+ 1 (or (:note-octave state) (:octave state))) 12)) 128)
+                                  (= (:key-type state) ShortMessage/PITCH_BEND)
+                                  (bit-and (:pitch-bend state) 2r1111111)
+                                  :else (:key state))
                             value (get {ShortMessage/NOTE_ON (:attack state)
                                         ShortMessage/CHANNEL_PRESSURE (:channel-pressure state)
                                         ShortMessage/CONTROL_CHANGE (:cc-change state)
-                                        ShortMessage/PITCH_BEND (:pitch-bend state)
+                                        ShortMessage/PITCH_BEND (min 128 (bit-shift-right (:pitch-bend state) 7))
                                         ShortMessage/POLY_PRESSURE (:key-pressure state)}
                                        (:key-type state) 0)
                             track (aget (.getTracks (.getSequence (:sequencer state))) (:track state))]
                         (when (= (count notes) (count (:notes state)))
-                          (throw (Exception. (format "Could not parse note: %s" (str (first notes))))))
+                          (throw (Exception. (format "Could not parse note: %s"
+                                                     (if (symbol? (first notes))
+                                                       (name (first notes))
+                                                       (str (first notes)))))))
                         (cond
                           (and (not (nil? (:key state))) (= (type (:key state)) MidiMessage))
                           (.add track (MidiEvent. (:key state) (:position state)))
@@ -269,10 +284,7 @@
                                     (MidiEvent. (ShortMessage.
                                                  (:key-type state)
                                                  (:channel state)
-                                                 (+ (:key state)
-                                                    (if (or (= (:key-type state) ShortMessage/NOTE_ON)
-                                                            (= (:key-type state) ShortMessage/POLY_PRESSURE))
-                                                      (:transpose state) 0))
+                                                 key
                                                  value)
                                                 (:position state))))
                             (when (and (= (:key-type state) ShortMessage/NOTE_ON) (not (= (:tie state) :begin)))
@@ -291,7 +303,8 @@
                                         (:position state)
                                         (+ (:position state) (or (:repeat-length state) (:length state))))})))
               notes (:notes state)]
-          (recur notes (merge state {:repeat-length nil})))
+          (recur notes (merge state {:repeat-length nil
+                                     :note-octave nil})))
         state))))
 
 (defn play [& [notes sequencer state]]
