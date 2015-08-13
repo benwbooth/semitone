@@ -10,7 +10,8 @@
   (:import [javax.sound.midi
             MidiSystem MidiMessage MetaMessage MetaEventListener
             SysexMessage ShortMessage Sequencer Sequence MidiEvent Track]
-           [java.nio ByteBuffer]))
+           [java.nio ByteBuffer]
+           [com.sun.media.sound SF2Soundbank]))
 
 (defn vec-rest [coll]
   (if (vector? coll)
@@ -225,10 +226,15 @@
 (def ^:dynamic *seq* (Sequence. Sequence/PPQ 256))
 (def ^:dynamic *synth* (MidiSystem/getSynthesizer))
 
+(defn load-soundfont [soundfont & [synth]]
+  (let [synth (or synth *synth*)
+        soundbank (SF2Soundbank. (java.io.FileInputStream. soundfont))]
+    (.loadAllInstruments synth soundbank)))
+
 (defn make-sequencer [& [sequence synth]]
   (let [sequence (or sequence *seq*)
         synth (or synth *synth*)
-        sequencer (MidiSystem/getSequencer)]
+        sequencer (MidiSystem/getSequencer false)]
     (.addMetaEventListener sequencer
                            (reify MetaEventListener
                              (meta [meta]
@@ -237,8 +243,8 @@
     (.setSequence sequencer sequence)
     (.createTrack (.getSequence sequencer))
     (.open sequencer)
-    ;; (.open synth)
-    ;; (.setReceiver (.getTransmitter sequencer) (.getReceiver synth))
+    (.open synth)
+    (.setReceiver (.getTransmitter sequencer) (.getReceiver synth))
     sequencer))
 
 (def ^:dynamic *sequencer* (make-sequencer *seq* *synth*))

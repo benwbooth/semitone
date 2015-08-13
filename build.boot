@@ -8,3 +8,16 @@
   jar {:main 'semitone.core}
   aot {:all true}
   repl {:init-ns 'semitone.core})
+
+(deftask get-soundfonts
+  "Download some soundfonts."
+  []
+  (fn [continue]
+    (fn [event]
+     (clojure.java.shell/sh "bash" "-c" "mkdir -p soundfonts && cd soundfonts && wget https://woolyss.com/chipmusic/chipmusic-soundfonts/The_Nes_Soundfont.zip; unzip The_Nes_Soundfont.zip")
+     (continue event))))
+
+(deftask build
+  "Build my project."
+  []
+  (comp (pom) (jar) (install)))
