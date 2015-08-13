@@ -40,12 +40,14 @@
       state)))
 
 (defn parse-length [notes state]
-  (if (empty? notes)
+  (if (or (empty? notes)
+          (not (or (ratio? (first notes))
+                   (symbol? (first notes)))))
     state
     (let [length (first notes)
           ppq (.getResolution (.getSequence (:sequencer state)))]
       (cond
-        (= (type length) clojure.lang.Ratio)
+        (ratio? length)
         (merge state {:key (if (< length 0) nil (:key state))
                       :length (Math/abs (* 4.0 length ppq))
                       :repeat-length nil
@@ -73,7 +75,9 @@
 
 ;; handles note on/off, key pressure, cc, program change, channel pressure, pitch bend messages
 (defn parse-note [notes state]
-  (if (empty? notes)
+  (if (or (empty? notes)
+          (not (or (= (type (first notes)) MidiMessage)
+                   (symbol? (first notes)))))
     state
     (if (= (type (first notes)) MidiMessage)
       (merge state {:key (first notes) :notes (vec-rest notes)})
@@ -152,7 +156,10 @@
                 state))))))))
 
 (defn parse-param [notes state]
-  (if (empty? notes)
+  (if (or (empty? notes)
+          (not (or (symbol? (first notes))
+                   (= (type (first notes)) java.lang.Long)
+                   (= (type (first notes)) java.lang.Double))))
     state
     (let [token (first notes)
           token (if (or (= (type token) Long) (= (type token) Double)) (str token) (name token))]
@@ -179,20 +186,26 @@
          {:notes (vec-rest notes)})
         state))))
 
-(defn make-sequencer [& [sequence]]
-  (let [sequence (or sequence (Sequence. Sequence/PPQ 256))
+(def ^:dynamic *seq* (Sequence. Sequence/PPQ 256))
+(def ^:dynamic *synth* (MidiSystem/getSynthesizer))
+
+(defn make-sequencer [& [sequence synth]]
+  (let [sequence (or sequence *seq*)
+        synth (or synth *synth*)
         sequencer (MidiSystem/getSequencer)]
     (.addMetaEventListener sequencer
                            (reify MetaEventListener
                              (meta [meta]
-                               (.setTempoInMPQ sequencer (float (.getInt (.put (ByteBuffer/allocate 4) (.getData meta) 1 3)))))))
+                               (when (= (.getType meta) 0x51)
+                                 (.setTempoInMPQ sequencer (float (.getInt (.put (ByteBuffer/allocate 4) (.getData meta) 1 3))))))))
     (.setSequence sequencer sequence)
     (.createTrack (.getSequence sequencer))
     (.open sequencer)
+    (.open synth)
+    (.setReceiver (.getTransmitter sequencer) (.getReceiver synth))
     sequencer))
 
-(def ^:dynamic *seq* (Sequence. Sequence/PPQ 256))
-(def ^:dynamic *sequencer* (make-sequencer *seq*))
+(def ^:dynamic *sequencer* (make-sequencer *seq* *synth*))
 
 (defn compose [notes & [sequencer state]]
   (let [sequencer (or sequencer *sequencer*)
@@ -227,8 +240,7 @@
               state (cond
                       (or (seq? (first notes)) (vector? (first notes)))
                       (merge (compose (first notes) sequencer state)
-                             {:notes (vec-rest notes)}
-                             (if (vector? notes) {:position position} {}))
+                             {:notes (vec-rest notes)})
                       (map? (first notes))
                       (parse-state notes state)
                       (keyword? (first notes))
@@ -275,7 +287,7 @@
                           :else
                           (throw (Exception. (format "Could not parse key: %s" key))))
                         (merge state {:position
-                                      (if (vector? (:notes state))
+                                      (if (and (vector? (:notes state)) (not (empty? (:notes state))))
                                         (:position state)
                                         (+ (:position state) (or (:repeat-length state) (:length state))))})))
               notes (:notes state)]
