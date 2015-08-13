@@ -14,7 +14,7 @@
   []
   (fn [continue]
     (fn [event]
-     (clojure.java.shell/sh "bash" "-c" "mkdir -p soundfonts && cd soundfonts && wget https://woolyss.com/chipmusic/chipmusic-soundfonts/The_Nes_Soundfont.zip; unzip The_Nes_Soundfont.zip")
+     (clojure.java.shell/sh "bash" "-c" "mkdir -p soundfonts && cd soundfonts && wget https://woolyss.com/chipmusic/chipmusic-soundfonts/The_Nes_Soundfont.zip && unzip The_Nes_Soundfont.zip")
      (continue event))))
 
 (deftask build
