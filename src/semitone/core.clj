@@ -2,7 +2,25 @@
 
 ;; TODO:
 ;;   MPE support
-;;   :time-signature
+;;    - :channel can be a list of available channels, in order of preference
+;;    - get start/stop of note to be played
+;;    - get all the notes that intersect the note to be played on the current track
+;;      - do a linear scan of the track
+;;    - get a unique set of channels from the intersecting notes
+;;    - choose to play on the next available channel on the channel list
+;;    - if no channels are available, play on the next channel/least used channel
+;;   smoothing/averaging function for param values
+;;   DAW recording interface for capturing param values / performances
+;;   :time-signature [4 4]
+;;   add shortcuts for intervals, chords, key signatures, dynamics
+;;   convenient meta message functions
+;;   convenient sysex function
+;;   SMPTE time
+
+;; Useful links:
+;; http://www.midi.org/techspecs/midimessages.php
+;; http://computermusicresource.com/midikeys.html
+;; http://www.recordingblogs.com/sa/tabid/88/Default.aspx?topic=MIDI+meta+messages
 
 (ns semitone.core
   (:require [clojure.pprint :refer [pprint]]
@@ -138,6 +156,7 @@
                       value (cond
                               (= \> (get (get m 2) 0)) (mod (+ old-value (or value 0) (- (count (get m 2)) 1)) max-value)
                               (= \< (get (get m 2) 0)) (mod (- old-value (or value 0) (- (count (get m 2)) 1)) max-value)
+                              (and (= "" (get m 2)) (= "" (get m 3))) old-value
                               :else value)]
                   (merge state
                          (cond
@@ -172,56 +191,65 @@
     state
     (let [token (first notes)
           token (if (number? token) (str token) (name token))]
-      (if (re-matches #"((!|\?|&|\$|)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|))+" token)
-        (merge
-         (apply merge state
-                (mapcat #(if (= "" (get % 0)) []
-                             (let [param
-                                   (get {"!" :attack
-                                         "?" :release
-                                         "$" :displacement-start
-                                         "&" :displacement-end}
-                                        (get % 1) (:param state))
-                                   [min-value max-value double-min double-max]
-                                   (get {:attack [0 128 0.0 1.0]
-                                         :release [0 128 0.0 1.0]
-                                         :channel-pressure [0 128 0.0 1.0]
-                                         :key-pressure [0 128 0.0 1.0]
-                                         :cc-value [0 128 0.0 1.0]
-                                         :key [0 128 -1.0 10.0]
-                                         :pitch-bend [0 16384 -1.0 1.0]
-                                         :octave [-1 9 -1.0 10.0]
-                                         :displacement-start
-                                         [(- (.getResolution (.getSequence (:sequencer state))))
-                                          (.getResolution (.getSequence (:sequencer state)))
-                                          -1.0 1.0]
-                                         :displacement-end
-                                         [(- (.getResolution (.getSequence (:sequencer state))))
-                                          (.getResolution (.getSequence (:sequencer state)))
-                                          -1.0 1.0]}
-                                        param)
-                                   old-value (get state param)
-                                   value (if (re-find #"[.eE]" (get % 3))
-                                           (max min-value (min max-value
-                                                               (int (+
-                                                                     (* (/ (- (Double. (get % 3)) double-min)
-                                                                           (- double-max double-min))
-                                                                        (- max-value min-value))
-                                                                     min-value))))
-                                           (+ (mod (- (if (= "" (get % 3))
-                                                        (if (= "" (get % 2)) 0 1)
-                                                        (Integer. (get % 3)))
-                                                      min-value)
-                                                   (- max-value min-value))
-                                              min-value))
-                                   value (cond
-                                           (= \> (get (get % 2) 0)) (mod (+ old-value (or value 0) (- (count (get % 2)) 1)) max-value)
-                                           (= \< (get (get % 2) 0)) (mod (- old-value (or value 0) (- (count (get % 2)) 1)) max-value)
-                                           :else value)]
-                               [{param value}]))
-                     (re-seq #"\G(!|\?|&|\$|)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|)" token)))
-         {:notes (vec-rest notes)})
-        state))))
+      (if-let [m (re-matches #"(!|\?|&|\$)" token)]
+        (let [param
+              (get {"!" :attack
+                    "?" :release
+                    "&" :displacement-end
+                    "$" :displacement-start}
+                   (get m 1) (:param state))]
+          (recur (vec-rest notes) (merge state {:param param})))
+        (if (re-matches #"((!|\?|&|\$|)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|))+" token)
+          (merge
+           (apply merge state
+                  (mapcat #(if (= "" (get % 0)) []
+                               (let [param
+                                     (get {"!" :attack
+                                           "?" :release
+                                           "$" :displacement-start
+                                           "&" :displacement-end}
+                                          (get % 1) (:param state))
+                                     [min-value max-value double-min double-max]
+                                     (get {:attack [0 128 0.0 1.0]
+                                           :release [0 128 0.0 1.0]
+                                           :channel-pressure [0 128 0.0 1.0]
+                                           :key-pressure [0 128 0.0 1.0]
+                                           :cc-value [0 128 0.0 1.0]
+                                           :key [0 128 -1.0 10.0]
+                                           :pitch-bend [0 16384 -1.0 1.0]
+                                           :octave [-1 9 -1.0 10.0]
+                                           :displacement-start
+                                           [(- (.getResolution (.getSequence (:sequencer state))))
+                                            (.getResolution (.getSequence (:sequencer state)))
+                                            -1.0 1.0]
+                                           :displacement-end
+                                           [(- (.getResolution (.getSequence (:sequencer state))))
+                                            (.getResolution (.getSequence (:sequencer state)))
+                                            -1.0 1.0]}
+                                          param)
+                                     old-value (get state param)
+                                     value (if (re-find #"[.eE]" (get % 3))
+                                             (max min-value (min max-value
+                                                                 (int (+
+                                                                       (* (/ (- (Double. (get % 3)) double-min)
+                                                                             (- double-max double-min))
+                                                                          (- max-value min-value))
+                                                                       min-value))))
+                                             (+ (mod (- (if (= "" (get % 3))
+                                                          (if (= "" (get % 2)) 0 1)
+                                                          (Integer. (get % 3)))
+                                                        min-value)
+                                                     (- max-value min-value))
+                                                min-value))
+                                     value (cond
+                                             (= \> (get (get % 2) 0)) (mod (+ old-value (or value 0) (- (count (get % 2)) 1)) max-value)
+                                             (= \< (get (get % 2) 0)) (mod (- old-value (or value 0) (- (count (get % 2)) 1)) max-value)
+                                             (and (= "" (get % 2)) (= "" (get % 3))) old-value
+                                             :else value)]
+                                 [{param value}]))
+                          (re-seq #"\G(!|\?|&|\$|)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|)" token)))
+           {:notes (vec-rest notes)})
+          state)))))
 
 (def ^:dynamic *seq* (Sequence. Sequence/PPQ 256))
 (def ^:dynamic *synth* (MidiSystem/getSynthesizer))
@@ -264,7 +292,7 @@
                       :tie nil
                       :key 0
                       :message-type ShortMessage/NOTE_ON
-                      :channel 0
+                      :ch 0
                       :track 0
                       :key-signature {}
                       :time-signature [4 4]
@@ -334,7 +362,7 @@
                               (.add track 
                                     (MidiEvent. (ShortMessage.
                                                  (:message-type state)
-                                                 (:channel state)
+                                                 (:ch state)
                                                  key
                                                  value)
                                                 (+ (:position state)
@@ -342,7 +370,7 @@
                             (when (and (= (:message-type state) ShortMessage/NOTE_ON) (not (= (:tie state) :begin)))
                               (.add track (MidiEvent. (ShortMessage.
                                                        ShortMessage/NOTE_OFF
-                                                       (:channel state)
+                                                       (:ch state)
                                                        key
                                                        (:release state))
                                                       (max 
