@@ -1,5 +1,6 @@
 (set-env! :dependencies '[[org.clojure/clojure "1.7.0"]
-                          [intronic/interval-tree "0.2.7"]]
+                          [intronic/interval-tree "0.2.7"]
+                          [incanter/incanter-core "1.9.0"] ]
           :source-paths #{"src/"})
  
 (task-options!

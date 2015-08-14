@@ -9,7 +9,6 @@
 ;;    - get a unique set of channels from the intersecting notes
 ;;    - choose to play on the next available channel on the channel list
 ;;    - if no channels are available, play on the next channel/least used channel
-;;   smoothing/averaging function for param values
 ;;   DAW recording interface for capturing param values / performances
 ;;   :time-signature [4 4]
 ;;   add shortcuts for intervals, chords, key signatures, dynamics
@@ -24,12 +23,22 @@
 
 (ns semitone.core
   (:require [clojure.pprint :refer [pprint]]
-            [clojure.stacktrace :refer :all])
+            [clojure.stacktrace :refer [print-stack-trace]]
+            [incanter.interpolation :refer [interpolate-parametric]])
   (:import [javax.sound.midi
             MidiSystem MidiMessage MetaMessage MetaEventListener
             SysexMessage ShortMessage Sequencer Sequence MidiEvent Track]
            [java.nio ByteBuffer]
            [com.sun.media.sound SF2Soundbank]))
+
+(defn param [num-points values & args]
+  (let [args (if (empty? args) '(:cubic) args)
+        interp (apply interpolate-parametric values args)
+        fix-type (cond
+                   (every? ratio? values) rationalize
+                   (every? integer? values) int
+                   :else double)]
+    (map #(fix-type (interp %)) (range 0 1 (/ 1.0 num-points)))))
 
 (defn vec-rest [coll]
   (if (vector? coll)
