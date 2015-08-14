@@ -32,6 +32,9 @@
            [java.nio ByteBuffer]
            [com.sun.media.sound SF2Soundbank]))
 
+(defn ratio [value]
+  (toRatio value))
+
 (defn env [num-points values & args]
   (let [args (if (empty? args) '(:cubic) args)
         interp (apply interpolate-parametric values args)
