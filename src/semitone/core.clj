@@ -9,7 +9,6 @@
 ;;    - get a unique set of channels from the intersecting notes
 ;;    - choose to play on the next available channel on the channel list
 ;;    - if no channels are available, play on the next channel/least used channel
-;;   fix envelopes
 ;;   :time-signature [4 4]
 ;;   add shortcuts for intervals, chords, key signatures, dynamics
 ;;   DAW recording interface for capturing param values / performances
