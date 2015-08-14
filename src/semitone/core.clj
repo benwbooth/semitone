@@ -40,7 +40,7 @@
         interp (apply interpolate-parametric values type :range [0 (- num-points 1)] options)
         fix-type (cond
                    (every? ratio? values) ratio
-                   (every? integer? values) int
+                   (every? integer? values) #(int (Math/round %))
                    :else double)]
     (map #(fix-type (interp %)) (range num-points))))
 
