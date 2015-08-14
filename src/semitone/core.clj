@@ -31,7 +31,7 @@
            [java.nio ByteBuffer]
            [com.sun.media.sound SF2Soundbank]))
 
-(defn param [num-points values & args]
+(defn env [num-points values & args]
   (let [args (if (empty? args) '(:cubic) args)
         interp (apply interpolate-parametric values args)
         fix-type (cond
