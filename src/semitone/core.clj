@@ -9,9 +9,9 @@
 ;;    - get a unique set of channels from the intersecting notes
 ;;    - choose to play on the next available channel on the channel list
 ;;    - if no channels are available, play on the next channel/least used channel
-;;   DAW recording interface for capturing param values / performances
 ;;   :time-signature [4 4]
 ;;   add shortcuts for intervals, chords, key signatures, dynamics
+;;   DAW recording interface for capturing param values / performances
 ;;   convenient meta message functions
 ;;   convenient sysex function
 ;;   SMPTE time
@@ -23,7 +23,6 @@
 
 (ns semitone.core
   (:require [clojure.pprint :refer [pprint]]
-            [clojure.lang.Numbers :refer [toRatio]]
             [clojure.stacktrace :refer [print-stack-trace]]
             [incanter.interpolation :refer [interpolate-parametric]])
   (:import [javax.sound.midi
@@ -33,16 +32,23 @@
            [com.sun.media.sound SF2Soundbank]))
 
 (defn ratio [value]
-  (toRatio value))
+  (clojure.lang.Numbers/toRatio value))
 
 (defn env [num-points values & args]
-  (let [args (if (empty? args) '(:cubic) args)
+  (let [args (if (empty? args)
+               (if (= 2 (count values)) '(:linear) '(:cubic))
+               args)
         interp (apply interpolate-parametric values args)
         fix-type (cond
-                   (every? ratio? values) toRatio
+                   (every? ratio? values) ratio
                    (every? integer? values) int
-                   :else double)]
-    (map #(fix-type (interp %)) (range 0 1 (/ 1.0 num-points)))))
+                   :else double)
+        values (if (= 2 (count values))
+                 (list (first values)
+                       (fix-type (/ (+ (first values) (last values)) 2))
+                       (last values))
+                 values)]
+    (map #(fix-type (interp %)) (concat (take (- num-points 1) (range 0.0 1.0 (/ 1.0 num-points))) [1.0]))))
 
 (defn vec-rest [coll]
   (if (vector? coll)
@@ -84,16 +90,17 @@
                       :repeat-length nil
                       :notes (vec-rest notes)})
         (symbol? length)
-        (if-let [m (re-matches #"(-|)((?:[xwhqistjlmno]\.*)+)" (name length))]
+        (if-let [m (re-matches #"(-|)((?:[xwhqistjlmno](?:[0-9]*)\.*)+)" (name length))]
           (let [length-map {"x" 2 "w" 1 "h" 1/2 "q" 1/4 "i" 1/8 "s" 1/16 "t" 1/32
                             "j" 1/64 "l" 1/128 "m" 1/256 "n" 1/512 "o" 1/1024}]
             (merge state {:message-type (if (= "-" (get m 1)) nil (:message-type state))
                           :length (reduce +
-                                          (map #(* 4.0
+                                          (map #(* 4
                                                    (get length-map (get % 1))
-                                                   (- 2.0 (/ 1.0 (reduce * (repeat (count (get % 2)) 2))))
+                                                   (- 2 (/ 1 (reduce * (repeat (count (get % 2)) 2))))
+                                                   (/ 1 (if (or (= (get % 3) "") (= (Integer. (get % 3)) 0)) 1 (Integer. (get % 3))))
                                                    ppq)
-                                               (re-seq #"\G([xwhqistjlmno])(\.*)" (get m 2))))
+                                               (re-seq #"\G([xwhqistjlmno])([0-9]*)(\.*)" (get m 2))))
                           :repeat-length nil
                           :notes (vec-rest notes)}))
           (if-let [m (re-matches #"([-=])[-=]*" (name length))]
@@ -114,7 +121,7 @@
       (merge state {:midi-message (first notes) :notes (vec-rest notes)})
       (let [note (clojure.string/replace (name (first notes)) #"__[0-9]+__auto__$" "#")]
         ;; note on/off / key pressure by key name
-        (if-let [m (re-matches #"(\*|-|)([a-gA-G])(#|##|b|bb|n|)(-?[0-9]+|)(-|)" note)]
+        (if-let [m (re-matches #"(\*|_|)([a-gA-G])(#|##|b|bb|n|)(-?[0-9]+|)(_|)" note)]
           (let [note-map {"C" -12 "D" -10 "E" -8 "F" -7 "G" -5 "A" -3 "B" -1
                           "c" 0 "d" 2 "e" 4 "f" 5 "g" 7 "a" 9 "b" 11}
                 accidental-map {"#" 1 "##" 2 "b" -1 "bb" -2 "n" 0 "" nil}
@@ -126,8 +133,8 @@
                                0)]
             (merge state {:message-type (if key-pressure ShortMessage/POLY_PRESSURE ShortMessage/NOTE_ON)
                           :tie (cond
-                                 (= "-" (get m 1)) :end
-                                 (= "-" (get m 5)) :begin
+                                 (= "_" (get m 1)) :end
+                                 (= "_" (get m 5)) :begin
                                  :else nil)
                           :key (+ key accidental)
                           :note-octave note-octave
@@ -145,7 +152,7 @@
                             :prog (mod (Integer. (get m 1)) 128)
                             :notes (vec-rest notes)})
               ;; channel pressure, pitch bend, note on/off / key pressure by key number
-              (if-let [m (re-matches #"(\*|\^|\*k|k|-k)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|)(-|)" note)]
+              (if-let [m (re-matches #"(\*|\^|\*k|k|_k)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|)(_|)" note)]
                 (let [param ({"*" :channel-pressure "^" :pitch-bend "*k" :key-pressure "k" :key} (get m 1))
                       [min-value max-value double-min double-max]
                       (get {:channel-pressure [0 128 0.0 1.0]
@@ -188,8 +195,8 @@
                            (or (= "k" (get m 1)) (= "-k" (get m 1)))
                            {:message-type ShortMessage/NOTE_ON
                             :tie (cond
-                                   (= "-k" (get m 1)) :end
-                                   (= "-" (get m 5)) :begin
+                                   (= "_k" (get m 1)) :end
+                                   (= "_" (get m 5)) :begin
                                    :else nil)
                             param value
                             :param param}
