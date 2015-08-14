@@ -23,6 +23,7 @@
 
 (ns semitone.core
   (:require [clojure.pprint :refer [pprint]]
+            [clojure.lang.Numbers :refer [toRatio]]
             [clojure.stacktrace :refer [print-stack-trace]]
             [incanter.interpolation :refer [interpolate-parametric]])
   (:import [javax.sound.midi
@@ -35,7 +36,7 @@
   (let [args (if (empty? args) '(:cubic) args)
         interp (apply interpolate-parametric values args)
         fix-type (cond
-                   (every? ratio? values) rationalize
+                   (every? ratio? values) toRatio
                    (every? integer? values) int
                    :else double)]
     (map #(fix-type (interp %)) (range 0 1 (/ 1.0 num-points)))))
@@ -260,6 +261,9 @@
            {:notes (vec-rest notes)})
           state)))))
 
+(defn get-channel [state]
+  (:ch state))
+
 (def ^:dynamic *seq* (Sequence. Sequence/PPQ 256))
 (def ^:dynamic *synth* (MidiSystem/getSynthesizer))
 
@@ -371,7 +375,7 @@
                               (.add track 
                                     (MidiEvent. (ShortMessage.
                                                  (:message-type state)
-                                                 (:ch state)
+                                                 (get-channel state)
                                                  key
                                                  value)
                                                 (+ (:position state)
@@ -379,7 +383,7 @@
                             (when (and (= (:message-type state) ShortMessage/NOTE_ON) (not (= (:tie state) :begin)))
                               (.add track (MidiEvent. (ShortMessage.
                                                        ShortMessage/NOTE_OFF
-                                                       (:ch state)
+                                                       (get-channel state)
                                                        key
                                                        (:release state))
                                                       (max 
