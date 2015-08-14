@@ -9,6 +9,7 @@
 ;;    - get a unique set of channels from the intersecting notes
 ;;    - choose to play on the next available channel on the channel list
 ;;    - if no channels are available, play on the next channel/least used channel
+;;   fix envelopes
 ;;   :time-signature [4 4]
 ;;   add shortcuts for intervals, chords, key signatures, dynamics
 ;;   DAW recording interface for capturing param values / performances
@@ -34,21 +35,15 @@
 (defn ratio [value]
   (clojure.lang.Numbers/toRatio value))
 
-(defn env [num-points values & args]
-  (let [args (if (empty? args)
-               (if (= 2 (count values)) '(:linear) '(:cubic))
-               args)
-        interp (apply interpolate-parametric values args)
+(defn env [num-points values & [type options]]
+  (let [values (vec values)
+        type (or type (if (= 2 (count values)) :linear :cubic))
+        interp (apply interpolate-parametric values type :range [0 (- num-points 1)] options)
         fix-type (cond
                    (every? ratio? values) ratio
                    (every? integer? values) int
-                   :else double)
-        values (if (= 2 (count values))
-                 (list (first values)
-                       (fix-type (/ (+ (first values) (last values)) 2))
-                       (last values))
-                 values)]
-    (map #(fix-type (interp %)) (concat (take (- num-points 1) (range 0.0 1.0 (/ 1.0 num-points))) [1.0]))))
+                   :else double)]
+    (map #(fix-type (interp %)) (range num-points))))
 
 (defn vec-rest [coll]
   (if (vector? coll)
@@ -277,12 +272,12 @@
 (def ^:dynamic *seq* (Sequence. Sequence/PPQ 256))
 (def ^:dynamic *synth* (MidiSystem/getSynthesizer))
 
-(defn load-soundfont [soundfont & [synth]]
+(defn load-soundfont [soundfont & [synth _]]
   (let [synth (or synth *synth*)
         soundbank (SF2Soundbank. (java.io.FileInputStream. soundfont))]
     (.loadAllInstruments synth soundbank)))
 
-(defn make-sequencer [& [sequence synth]]
+(defn make-sequencer [& [sequence synth _]]
   (let [sequence (or sequence *seq*)
         synth (or synth *synth*)
         sequencer (MidiSystem/getSequencer false)]
@@ -300,7 +295,7 @@
 
 (def ^:dynamic *sequencer* (make-sequencer *seq* *synth*))
 
-(defn compose [notes & [sequencer state]]
+(defn compose [notes & [sequencer state _]]
   (let [sequencer (or sequencer *sequencer*)
         notes (if (or (vector? notes) (seq? notes)) notes (list notes))
         state (merge {:sequencer sequencer
@@ -414,7 +409,7 @@
                                      :midi-message nil})))
         state))))
 
-(defn play [& [notes sequencer state]]
+(defn play [& [notes sequencer state _]]
   (let [sequencer (or sequencer *sequencer*)
         state (compose (or notes '()) sequencer state)]
     (when (nil? notes)
@@ -422,7 +417,7 @@
     (.start sequencer)
     (while (.isRunning sequencer) (Thread/sleep 100))))
 
-(defn clear [& [sequencer]]
+(defn clear [& [sequencer _]]
   (let [sequencer (or sequencer *sequencer*)
         sequence (.getSequence sequencer)]
     (doseq [track (.getTracks sequence)]
