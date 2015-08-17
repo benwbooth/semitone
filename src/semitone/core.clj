@@ -35,14 +35,18 @@
   (clojure.lang.Numbers/toRatio value))
 
 (defn env [num-points values & [type options]]
-  (let [values (vec values)
-        type (or type (if (= 2 (count values)) :linear :cubic))
-        interp (apply interpolate-parametric values type :range [0 (- num-points 1)] options)
-        fix-type (cond
-                   (every? ratio? values) ratio
-                   (every? integer? values) #(int (Math/round %))
-                   :else double)]
-    (map #(fix-type (interp %)) (range num-points))))
+  (if (= 0 (count values))
+    '()
+    (if (= 1 (count values))
+      (repeat num-points (first values))
+      (let [values (vec values)
+            type (or type (if (= 2 (count values)) :linear :cubic))
+            interp (apply interpolate-parametric values type :range [0 (- num-points 1)] options)
+            fix-type (cond
+                       (every? ratio? values) ratio
+                       (every? integer? values) #(int (Math/round %))
+                       :else double)]
+        (map #(fix-type (interp %)) (range num-points))))))
 
 (defn vec-rest [coll]
   (if (vector? coll)
@@ -146,8 +150,8 @@
                             :prog (mod (Integer. (get m 1)) 128)
                             :notes (vec-rest notes)})
               ;; channel pressure, pitch bend, note on/off / key pressure by key number
-              (if-let [m (re-matches #"(\*|\^|\*k|k|_k)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|)(_|)" note)]
-                (let [param ({"*" :channel-pressure "^" :pitch-bend "*k" :key-pressure "k" :key} (get m 1))
+              (if-let [m (re-matches #"(\*|\||\*k|k|_k)(>+|<+|)(-?(?:[0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(?:[eE]-?[0-9]+)?|)(_|)" note)]
+                (let [param ({"*" :channel-pressure "|" :pitch-bend "*k" :key-pressure "k" :key} (get m 1))
                       [min-value max-value double-min double-max]
                       (get {:channel-pressure [0 128 0.0 1.0]
                             :key-pressure [0 128 0.0 1.0]
@@ -174,7 +178,7 @@
                               :else value)]
                   (merge state
                          (cond
-                           (= "^" (get m 1))
+                           (= "|" (get m 1))
                            {:message-type ShortMessage/PITCH_BEND
                             param value
                             :param param}
