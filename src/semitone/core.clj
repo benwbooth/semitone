@@ -36,7 +36,7 @@
 
 (defn env [num-points values & [type options]]
   (if (= 0 (count values))
-    '()
+    (repeat num-points 0)
     (if (= 1 (count values))
       (repeat num-points (first values))
       (let [values (vec values)
@@ -395,7 +395,8 @@
                                                        key
                                                        (:release state))
                                                       (max 
-                                                       (+ (:position state)
+                                                       (+ 1
+                                                          (:position state)
                                                           (:displacement-start state))
                                                        (+ (:position state)
                                                           (or (:repeat-length state) (:length state))
