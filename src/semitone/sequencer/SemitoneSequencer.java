@@ -23,7 +23,7 @@
  * questions.
  */
 
-package com.sun.media.sound;
+package semitone.sequencer;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,7 +45,7 @@ import javax.sound.midi.*;
 /* TODO:
  * - rename PlayThread to PlayEngine (because isn't a thread)
  */
-final class RealTimeSequencer extends AbstractMidiDevice
+public class SemitoneSequencer extends AbstractMidiDevice
         implements Sequencer, AutoConnectSequencer {
 
     // STATIC VARIABLES
@@ -62,16 +62,24 @@ final class RealTimeSequencer extends AbstractMidiDevice
             new WeakHashMap<>();
 
     /**
-     * All RealTimeSequencers share this info object.
+     * All SemitoneSequencers share this info object.
      */
-    static final RealTimeSequencerInfo info = new RealTimeSequencerInfo();
+    static final SemitoneSequencerInfo info = new SemitoneSequencerInfo();
 
 
-    private static final Sequencer.SyncMode[] masterSyncModes = { Sequencer.SyncMode.INTERNAL_CLOCK };
-    private static final Sequencer.SyncMode[] slaveSyncModes  = { Sequencer.SyncMode.NO_SYNC };
+    private static final Sequencer.SyncMode[] masterSyncModes = { 
+      Sequencer.SyncMode.INTERNAL_CLOCK,
+      Sequencer.SyncMode.MIDI_SYNC,
+      Sequencer.SyncMode.MIDI_TIME_CODE
+    };
+    private static final Sequencer.SyncMode[] slaveSyncModes  = { 
+      Sequencer.SyncMode.NO_SYNC,
+      Sequencer.SyncMode.MIDI_SYNC,
+      Sequencer.SyncMode.MIDI_TIME_CODE
+    };
 
-    private static final Sequencer.SyncMode masterSyncMode    = Sequencer.SyncMode.INTERNAL_CLOCK;
-    private static final Sequencer.SyncMode slaveSyncMode     = Sequencer.SyncMode.NO_SYNC;
+    private Sequencer.SyncMode masterSyncMode    = Sequencer.SyncMode.INTERNAL_CLOCK;
+    private Sequencer.SyncMode slaveSyncMode     = Sequencer.SyncMode.NO_SYNC;
 
 
     /**
@@ -154,11 +162,11 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
     /* ****************************** CONSTRUCTOR ****************************** */
 
-    RealTimeSequencer() throws MidiUnavailableException {
+    public SemitoneSequencer() throws MidiUnavailableException {
         super(info);
 
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer CONSTRUCTOR");
-        if (Printer.trace) Printer.trace("<< RealTimeSequencer CONSTRUCTOR completed");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer CONSTRUCTOR");
+        if (Printer.trace) Printer.trace("<< SemitoneSequencer CONSTRUCTOR completed");
     }
 
 
@@ -167,7 +175,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
     public synchronized void setSequence(Sequence sequence)
         throws InvalidMidiDataException {
 
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: setSequence(" + sequence +")");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: setSequence(" + sequence +")");
 
         if (sequence != this.sequence) {
             if (this.sequence != null && sequence == null) {
@@ -208,13 +216,13 @@ final class RealTimeSequencer extends AbstractMidiDevice
             }
         }
 
-        if (Printer.trace) Printer.trace("<< RealTimeSequencer: setSequence(" + sequence +") completed");
+        if (Printer.trace) Printer.trace("<< SemitoneSequencer: setSequence(" + sequence +") completed");
     }
 
 
     public synchronized void setSequence(InputStream stream) throws IOException, InvalidMidiDataException {
 
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: setSequence(" + stream +")");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: setSequence(" + stream +")");
 
         if (stream == null) {
             setSequence((Sequence) null);
@@ -225,7 +233,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
         setSequence(seq);
 
-        if (Printer.trace) Printer.trace("<< RealTimeSequencer: setSequence(" + stream +") completed");
+        if (Printer.trace) Printer.trace("<< SemitoneSequencer: setSequence(" + stream +") completed");
 
     }
 
@@ -236,7 +244,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
 
     public synchronized void start() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: start()");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: start()");
 
         // sequencer not open: throw an exception
         if (!isOpen()) {
@@ -256,12 +264,12 @@ final class RealTimeSequencer extends AbstractMidiDevice
         // start playback
         implStart();
 
-        if (Printer.trace) Printer.trace("<< RealTimeSequencer: start() completed");
+        if (Printer.trace) Printer.trace("<< SemitoneSequencer: start() completed");
     }
 
 
     public synchronized void stop() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: stop()");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: stop()");
 
         if (!isOpen()) {
             throw new IllegalStateException("sequencer not open");
@@ -270,14 +278,14 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
         // not running; just return
         if (running == false) {
-            if (Printer.trace) Printer.trace("<< RealTimeSequencer: stop() not running!");
+            if (Printer.trace) Printer.trace("<< SemitoneSequencer: stop() not running!");
             return;
         }
 
         // stop playback
         implStop();
 
-        if (Printer.trace) Printer.trace("<< RealTimeSequencer: stop() completed");
+        if (Printer.trace) Printer.trace("<< SemitoneSequencer: stop() completed");
     }
 
 
@@ -353,14 +361,14 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
 
     public float getTempoInBPM() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: getTempoInBPM() ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: getTempoInBPM() ");
 
         return (float) MidiUtils.convertTempo(getTempoInMPQ());
     }
 
 
     public void setTempoInBPM(float bpm) {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: setTempoInBPM() ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: setTempoInBPM() ");
         if (bpm <= 0) {
             // should throw IllegalArgumentException
             bpm = 1.0f;
@@ -371,7 +379,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
 
     public float getTempoInMPQ() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: getTempoInMPQ() ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: getTempoInMPQ() ");
 
         if (needCaching()) {
             // if the sequencer is closed, return cached value
@@ -396,7 +404,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
             mpq = 1.0f;
         }
 
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: setTempoInMPQ() ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: setTempoInMPQ() ");
 
         if (needCaching()) {
             // cache the value
@@ -417,7 +425,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
             return;
         }
 
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: setTempoFactor() ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: setTempoFactor() ");
 
         if (needCaching()) {
             cacheTempoFactor = factor;
@@ -430,7 +438,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
 
     public float getTempoFactor() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: getTempoFactor() ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: getTempoFactor() ");
 
         if (needCaching()) {
             if (cacheTempoFactor != -1) {
@@ -443,7 +451,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
 
     public long getTickLength() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: getTickLength() ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: getTickLength() ");
 
         if (sequence == null) {
             return 0;
@@ -454,7 +462,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
 
     public synchronized long getTickPosition() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: getTickPosition() ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: getTickPosition() ");
 
         if (getDataPump() == null || sequence == null) {
             return 0;
@@ -470,7 +478,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
             return;
         }
 
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: setTickPosition("+tick+") ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: setTickPosition("+tick+") ");
 
         if (getDataPump() == null) {
             if (tick != 0) {
@@ -488,7 +496,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
 
     public long getMicrosecondLength() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: getMicrosecondLength() ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: getMicrosecondLength() ");
 
         if (sequence == null) {
             return 0;
@@ -499,7 +507,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
 
     public long getMicrosecondPosition() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: getMicrosecondPosition() ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: getMicrosecondPosition() ");
 
         if (getDataPump() == null || sequence == null) {
             return 0;
@@ -516,7 +524,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
             return;
         }
 
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: setMicrosecondPosition("+microseconds+") ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: setMicrosecondPosition("+microseconds+") ");
 
         if (getDataPump() == null) {
             if (microseconds != 0) {
@@ -536,7 +544,10 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
 
     public void setMasterSyncMode(Sequencer.SyncMode sync) {
-        // not supported
+        if (sync == Sequencer.SyncMode.NO_SYNC) {
+            throw new RuntimeException("NO_SYNC cannot be used as a master sync mode");
+        }
+        masterSyncMode = sync;
     }
 
 
@@ -553,7 +564,10 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
 
     public void setSlaveSyncMode(Sequencer.SyncMode sync) {
-        // not supported
+        if (sync == Sequencer.SyncMode.INTERNAL_CLOCK) {
+            throw new RuntimeException("INTERNAL_CLOCK cannot be used as a slave sync mode");
+        }
+        slaveSyncMode = sync;
     }
 
 
@@ -740,7 +754,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
     /*
      */
     protected void implOpen() throws MidiUnavailableException {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: implOpen()");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: implOpen()");
 
         //openInternalSynth();
 
@@ -761,11 +775,11 @@ final class RealTimeSequencer extends AbstractMidiDevice
         if (doAutoConnectAtNextOpen) {
             doAutoConnect();
         }
-        if (Printer.trace) Printer.trace("<< RealTimeSequencer: implOpen() succeeded");
+        if (Printer.trace) Printer.trace("<< SemitoneSequencer: implOpen() succeeded");
     }
 
     private void doAutoConnect() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: doAutoConnect()");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: doAutoConnect()");
         Receiver rec = null;
         // first try to connect to the default synthesizer
         // IMPORTANT: this code needs to be synch'ed with
@@ -803,7 +817,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
                 getTransmitter().setReceiver(rec);
             } catch (Exception e) {}
         }
-        if (Printer.trace) Printer.trace("<< RealTimeSequencer: doAutoConnect() succeeded");
+        if (Printer.trace) Printer.trace("<< SemitoneSequencer: doAutoConnect() succeeded");
     }
 
     private synchronized void propagateCaches() {
@@ -829,10 +843,10 @@ final class RealTimeSequencer extends AbstractMidiDevice
 
 
     protected synchronized void implClose() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: implClose() ");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: implClose() ");
 
         if (playThread == null) {
-            if (Printer.err) Printer.err("RealTimeSequencer.implClose() called, but playThread not instanciated!");
+            if (Printer.err) Printer.err("SemitoneSequencer.implClose() called, but playThread not instanciated!");
         } else {
             // Interrupt playback loop.
             playThread.close();
@@ -863,14 +877,14 @@ final class RealTimeSequencer extends AbstractMidiDevice
             autoConnectedReceiver = null;
         }
 
-        if (Printer.trace) Printer.trace("<< RealTimeSequencer: implClose() completed");
+        if (Printer.trace) Printer.trace("<< SemitoneSequencer: implClose() completed");
     }
 
     void implStart() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: implStart()");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: implStart()");
 
         if (playThread == null) {
-            if (Printer.err) Printer.err("RealTimeSequencer.implStart() called, but playThread not instanciated!");
+            if (Printer.err) Printer.err("SemitoneSequencer.implStart() called, but playThread not instanciated!");
             return;
         }
 
@@ -879,15 +893,15 @@ final class RealTimeSequencer extends AbstractMidiDevice
             running  = true;
             playThread.start();
         }
-        if (Printer.trace) Printer.trace("<< RealTimeSequencer: implStart() completed");
+        if (Printer.trace) Printer.trace("<< SemitoneSequencer: implStart() completed");
     }
 
 
     void implStop() {
-        if (Printer.trace) Printer.trace(">> RealTimeSequencer: implStop()");
+        if (Printer.trace) Printer.trace(">> SemitoneSequencer: implStop()");
 
         if (playThread == null) {
-            if (Printer.err) Printer.err("RealTimeSequencer.implStop() called, but playThread not instanciated!");
+            if (Printer.err) Printer.err("SemitoneSequencer.implStop() called, but playThread not instanciated!");
             return;
         }
 
@@ -896,7 +910,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
             running = false;
             playThread.stop();
         }
-        if (Printer.trace) Printer.trace("<< RealTimeSequencer: implStop() completed");
+        if (Printer.trace) Printer.trace("<< SemitoneSequencer: implStop() completed");
     }
 
     private static EventDispatcher getEventDispatcher() {
@@ -1081,14 +1095,14 @@ final class RealTimeSequencer extends AbstractMidiDevice
     }
 
 
-    private static class RealTimeSequencerInfo extends MidiDevice.Info {
+    private static class SemitoneSequencerInfo extends MidiDevice.Info {
 
         private static final String name = "Real Time Sequencer";
         private static final String vendor = "Oracle Corporation";
         private static final String description = "Software sequencer";
         private static final String version = "Version 1.0";
 
-        private RealTimeSequencerInfo() {
+        private SemitoneSequencerInfo() {
             super(name, vendor, description, version);
         }
     } // class Info
@@ -1314,7 +1328,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
                 }
                 // don't wait for more than 2 seconds
                 if ((System.nanoTime()/1000000l) - t > 1900) {
-                    if (Printer.err) Printer.err("Waited more than 2 seconds in RealTimeSequencer.PlayThread.stop()!");
+                    if (Printer.err) Printer.err("Waited more than 2 seconds in SemitoneSequencer.PlayThread.stop()!");
                     //break;
                 }
             }
@@ -1355,7 +1369,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
         /**
          * Main process loop driving the media flow.
          *
-         * Make sure to NOT synchronize on RealTimeSequencer
+         * Make sure to NOT synchronize on SemitoneSequencer
          * anywhere here (even implicit). That is a sure deadlock!
          */
         public void run() {
@@ -1576,7 +1590,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
             boolean[] newTrackDisabled = new boolean[tracks.length];
             boolean[] solo;
             boolean[] mute;
-            synchronized(RealTimeSequencer.this) {
+            synchronized(SemitoneSequencer.this) {
                 mute = trackMuted;
                 solo = trackSolo;
             }
@@ -1664,7 +1678,7 @@ final class RealTimeSequencer extends AbstractMidiDevice
          */
         private void applyDisabledTracks(boolean[] oldDisabled, boolean[] newDisabled) {
             byte[][] tempArray = null;
-            synchronized(RealTimeSequencer.this) {
+            synchronized(SemitoneSequencer.this) {
                 for (int i = 0; i < newDisabled.length; i++) {
                     if (((oldDisabled == null)
                          || (i >= oldDisabled.length)

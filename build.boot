@@ -1,7 +1,7 @@
 (set-env! :dependencies '[[org.clojure/clojure "1.7.0"]
                           [intronic/interval-tree "0.2.7"]
                           [incanter/incanter-core "1.9.0"] ]
-          :source-paths #{"src/"})
+          :source-paths #{"src" "target"})
  
 (task-options!
   pom {:project 'semitone
@@ -21,4 +21,4 @@
 (deftask build
   "Build my project."
   []
-  (comp (pom) (jar) (install)))
+  (comp (pom) (javac) (jar) (install)))

@@ -29,7 +29,8 @@
             MidiSystem MidiMessage MetaMessage MetaEventListener
             SysexMessage ShortMessage Sequencer Sequence MidiEvent Track]
            [java.nio ByteBuffer]
-           [com.sun.media.sound SF2Soundbank]))
+           [com.sun.media.sound SF2Soundbank]
+           [semitone.sequencer SemitoneSequencer]))
 
 (defn ratio [value]
   (clojure.lang.Numbers/toRatio value))
@@ -283,7 +284,7 @@
 (defn make-sequencer [& [sequence synth _]]
   (let [sequence (or sequence *seq*)
         synth (or synth *synth*)
-        sequencer (MidiSystem/getSequencer false)]
+        sequencer (SemitoneSequencer.)]
     (.addMetaEventListener sequencer
                            (reify MetaEventListener
                              (meta [meta]
