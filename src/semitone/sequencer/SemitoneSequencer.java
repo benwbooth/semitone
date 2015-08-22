@@ -31,7 +31,9 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import javax.sound.midi.*;
 
@@ -158,6 +160,12 @@ public class SemitoneSequencer extends AbstractMidiDevice
 
     /** the receiver that this device is auto-connected to */
     Receiver autoConnectedReceiver = null;
+    
+    private final Queue<MidiEvent> syncQueue = new ConcurrentLinkedQueue<MidiEvent>();
+    
+    public Queue<MidiEvent> getSyncQueue() {
+    	return this.syncQueue;
+    }
 
 
     /* ****************************** CONSTRUCTOR ****************************** */
@@ -759,7 +767,7 @@ public class SemitoneSequencer extends AbstractMidiDevice
         //openInternalSynth();
 
         // create PlayThread
-        playThread = new PlayThread();
+        playThread = new PlayThread(this);
 
         //id = nOpen();
         //if (id == 0) {
@@ -1011,7 +1019,7 @@ public class SemitoneSequencer extends AbstractMidiDevice
 
     // for recording
     protected Receiver createReceiver() throws MidiUnavailableException {
-        return new SequencerReceiver();
+        return new SequencerReceiver(syncQueue, slaveSyncMode);
     }
 
 
@@ -1047,20 +1055,27 @@ public class SemitoneSequencer extends AbstractMidiDevice
 
 
     final class SequencerReceiver extends AbstractReceiver {
+    	private Queue<MidiEvent> syncQueue;
+    	private Sequencer.SyncMode slaveSyncMode;
+    	public SequencerReceiver(Queue<MidiEvent> syncQueue, Sequencer.SyncMode slaveSyncMode) {
+    		this.syncQueue = syncQueue;
+    		this.slaveSyncMode = slaveSyncMode;
+    	}
 
         void implSend(MidiMessage message, long timeStamp) {
-            if (recording) {
-                long tickPos = 0;
+            long tickPos = 0;
 
-                // convert timeStamp to ticks
-                if (timeStamp < 0) {
-                    tickPos = getTickPosition();
-                } else {
-                    synchronized(tempoCache) {
-                        tickPos = MidiUtils.microsecond2tick(sequence, timeStamp, tempoCache);
-                    }
+            // convert timeStamp to ticks
+            if (timeStamp < 0) {
+                tickPos = getTickPosition();
+            } else {
+                synchronized(tempoCache) {
+                    tickPos = MidiUtils.microsecond2tick(sequence, timeStamp, tempoCache);
                 }
+            }
+            MidiEvent me = new MidiEvent(message, tickPos);
 
+            if (recording) {
                 // and record to the first matching Track
                 Track track = null;
                 // do not record real-time events
@@ -1086,10 +1101,27 @@ public class SemitoneSequencer extends AbstractMidiDevice
                         }
 
                         // create new MidiEvent
-                        MidiEvent me = new MidiEvent(message, tickPos);
                         track.add(me);
                     }
                 }
+            }
+
+            // Add sync messages to a thread-safe queue for slave syncing. The
+            // slave syncing logic is in the pump class.
+            if ((this.slaveSyncMode == Sequencer.SyncMode.MIDI_SYNC && 
+                (message.getStatus() == ShortMessage.START || 
+                 message.getStatus() == ShortMessage.CONTINUE || 
+                 message.getStatus() == ShortMessage.STOP || 
+                 message.getStatus() == ShortMessage.TIMING_CLOCK || 
+                 message.getStatus() == ShortMessage.SONG_POSITION_POINTER)) ||
+                (this.slaveSyncMode == Sequencer.SyncMode.MIDI_TIME_CODE && 
+                 (message.getStatus() == ShortMessage.MIDI_TIME_CODE ||
+                 // full frame sysex message
+                  (message.getMessage().length == 10 && 
+                   message.getMessage()[0] == 0xF0 && 
+                   message.getMessage()[1] == 0x7F))))
+            {
+                syncQueue.add(me);
             }
         }
     }
@@ -1267,10 +1299,11 @@ public class SemitoneSequencer extends AbstractMidiDevice
         boolean interrupted = false;
         boolean isPumping = false;
 
-        private final DataPump dataPump = new DataPump();
+        private final DataPump dataPump;
 
 
-        PlayThread() {
+        PlayThread(SemitoneSequencer sequencer) 
+        {
             // nearly MAX_PRIORITY
             int priority = Thread.NORM_PRIORITY
                 + ((Thread.MAX_PRIORITY - Thread.NORM_PRIORITY) * 3) / 4;
@@ -1279,6 +1312,7 @@ public class SemitoneSequencer extends AbstractMidiDevice
                                                     false,                  // daemon
                                                     priority,               // priority
                                                     true);                  // doStart
+            dataPump = new DataPump(sequencer);
         }
 
         DataPump getDataPump() {
@@ -1444,22 +1478,28 @@ public class SemitoneSequencer extends AbstractMidiDevice
         private long lastTick;
         private boolean needReindex = false;
         private int currLoopCounter = 0;
+        
+        SemitoneSequencer sequencer;
 
         //private sun.misc.Perf perf = sun.misc.Perf.getPerf();
         //private long perfFreq = perf.highResFrequency();
 
 
-        DataPump() {
-            init();
+        DataPump(SemitoneSequencer sequencer) 
+        {
+            init(sequencer);
         }
 
-        synchronized void init() {
+        synchronized void init(SemitoneSequencer sequencer) 
+        {
             ignoreTempoEventAt = -1;
             tempoFactor = 1.0f;
             inverseTempoFactor = 1.0f;
             noteOnCache = new int[128];
             tracks = null;
             trackDisabled = null;
+            
+            this.sequencer = sequencer;
         }
 
         synchronized void setTickPos(long tickPos) {
@@ -1534,7 +1574,7 @@ public class SemitoneSequencer extends AbstractMidiDevice
 
         synchronized void setSequence(Sequence seq) {
             if (seq == null) {
-                init();
+                init(this.sequencer);
                 return;
             }
             tracks = seq.getTracks();
