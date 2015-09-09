@@ -283,20 +283,20 @@ Sequencer objects and utility functions
 
 There are a few special variables defined in the ```semitone``` namespace:
 
-```*seq*``` is the default MIDI sequence object
-```*synth``` is the default MIDI synthesizer object
-```*sequencer*``` is the default MIDI sequencer object
+- ```*seq*``` is the default MIDI sequence object
+- ```*synth``` is the default MIDI synthesizer object
+- ```*sequencer*``` is the default MIDI sequencer object
 
 There are also a few functions that are useful:
 
-```(ratio value)``` converts the value to a ratio object
-```(env num-points values)``` produces an envelope with num-points points using values as a guide
-```(load-soundfont soundfont synth)``` loads a synth with the given soundfont file
-```(make-sequencer sequence synth)``` creates a new sequencer object
+- ```(ratio value)``` converts the value to a ratio object
+- ```(env num-points values)``` produces an envelope with num-points points using values as a guide
+- ```(load-soundfont soundfont synth)``` loads a synth with the given soundfont file
+- ```(make-sequencer sequence synth)``` creates a new sequencer object
 
-```(compose notes sequencer)``` writes the ```semitone``` notation to the sequencer
-```(play notes sequencer)``` writes the ```semitone``` notation to the sequencer and plays the sequencer
-```(clear sequencer)``` clears all the MIDI events from the sequencer
+- ```(compose notes sequencer)``` writes the ```semitone``` notation to the sequencer
+- ```(play notes sequencer)``` writes the ```semitone``` notation to the sequencer and plays the sequencer
+- ```(clear sequencer)``` clears all the MIDI events from the sequencer
 
 I also wrote a print-method for the ```*seq*``` object so you can see the raw MIDI events in a MIDI sequence for debugging purposes.
 
