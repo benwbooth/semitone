@@ -318,6 +318,16 @@ Big Caveat
 
 Since this whole thing is implemented on top of Java's Sequencer APIs, it suffers from a limitation: external MIDI sync is completely unimplemented. That means you can't use this with any external sequencer (such as reaper) at the moment. I'm hoping to remedy this by patching the Java sequencer API to add external MIDI clock and MTC master/slave support. I've gotten started on it, but I don't know when it'll be finished. When it is though, you should be able to sync ```semitone``` with external sequencers and send and receive MIDI messages between them. 
 
+Sorry for crappy examples
+=========================
+
+I'm a programmer not a composer, and I haven't had time to produce more tests/examples. Sorry about that! Patches welcome! :)
+
+Buggy As Hell, Badly Written, etc.
+==================================
+
+I know there are still LOTS of bugs in the code. Also, the code quality is pretty bad. I used regexes for parsing to keep things simple, but I'd like to convert it to use parser combinators at some point.
+
 What's next
 ===========
 
