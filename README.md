@@ -171,8 +171,8 @@ c4 !64 >>> >>> >>> >>>
 
 The above plays middle c with attack 64, then plays four more times with the attack increasing by 3 every time.
 
-Free parameter values and envelopes
-===================================
+Tweakable parameter values and envelopes
+========================================
 
 One interesting thing about ```semitone``` is that just about every MIDI message is _parameterizable_. For example, you can set the value of CC32 to 64 like this:
 
