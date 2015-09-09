@@ -313,4 +313,18 @@ We're calling the ```(play)``` function, which composes the ```semitone``` notat
 
 The ```>``` after the last c note increases the octave of the *previous* note using the octave parameter exposed by the ```c``` note and doing a relative increment of +1. This looks suspiciously similar to the ```>``` operator in MML language, but remember in ```semitone``` notation, the ```>``` operator adjust the *previous* note! Also, it is much more flexible because the ```>``` operator in ```semitone``` can adjust *any* parameter value, not just octaves! Everything can be tweaked.
 
+Big Caveat
+==========
 
+Since this whole thing is implemented on top of Java's Sequencer APIs, it suffers from a limitation: external MIDI sync is completely unimplemented. That means you can't use this with any external sequencer (such as reaper) at the moment. I'm hoping to remedy this by patching the Java sequencer API to add external MIDI clock and MTC master/slave support. I've gotten started on it, but I don't know when it'll be finished. When it is though, you should be able to sync ```semitone``` with external sequencers and send and receive MIDI messages between them. 
+
+What's next
+===========
+
+- Finish writing Java sequencer that can do external sync
+- [MPE support](http://expressiveness.org/2015/04/24/midi-specifications-for-multidimensional-polyphonic-expression-mpe)
+- implement time signatures
+- add shortcuts for intervals, chords, key signatures, dynamics
+- convenient meta message syntax
+- convenient sysex syntax
+- SMPTE time?
