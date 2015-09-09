@@ -183,11 +183,11 @@
                            {:message-type ShortMessage/PITCH_BEND
                             param value
                             :param param}
-                           (= "&" (get m 1))
+                           (= "*" (get m 1))
                            {:message-type ShortMessage/CHANNEL_PRESSURE
                             param value
                             :param param}
-                           (= "&k" (get m 1))
+                           (= "*k" (get m 1))
                            {:message-type ShortMessage/POLY_PRESSURE
                             :key value
                             :param param}
