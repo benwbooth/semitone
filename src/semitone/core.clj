@@ -157,7 +157,7 @@
                       (get {:channel-pressure [0 128 0.0 1.0]
                             :key-pressure [0 128 0.0 1.0]
                             :key [0 128 -1.0 10.0]
-                            :pitch-bend [0 16384 -1.0 1.0]} param)
+                            :pitch-bend [-8192 8191 -1.0 1.0]} param)
                       old-value (get state param)
                       value (if (re-find #"[.eE]" (get m 3))
                               (max min-value (min max-value
@@ -235,7 +235,7 @@
                                            :key-pressure [0 128 0.0 1.0]
                                            :cc-value [0 128 0.0 1.0]
                                            :key [0 128 -1.0 10.0]
-                                           :pitch-bend [0 16384 -1.0 1.0]
+                                           :pitch-bend [-8192 8191 -1.0 1.0]
                                            :octave [-1 9 -1.0 10.0]
                                            :displacement-start
                                            [(- (.getResolution (.getSequence (:sequencer state))))
@@ -308,7 +308,7 @@
                       :attack 127
                       :release 0
                       :channel-pressure 0
-                      :pitch-bend 8192
+                      :pitch-bend 0
                       :key-pressure 0
                       :position (.getTickPosition sequencer)
                       :tie nil
@@ -360,14 +360,14 @@
                                   (= (:message-type state) ShortMessage/PROGRAM_CHANGE)
                                   (:prog state)
                                   (= (:message-type state) ShortMessage/PITCH_BEND)
-                                  (bit-and (:pitch-bend state) 2r1111111)
+                                  (bit-and (+ 8192 (:pitch-bend state)) 2r1111111)
                                   :else (throw (Exception. (format "Unhandled message-type: %s" (:message-type state)))))
                             value (get {ShortMessage/NOTE_ON (:attack state)
                                         ShortMessage/POLY_PRESSURE (:key-pressure state)
                                         ShortMessage/CHANNEL_PRESSURE 0
                                         ShortMessage/CONTROL_CHANGE (:cc-value state)
                                         ShortMessage/PROGRAM_CHANGE 0
-                                        ShortMessage/PITCH_BEND (min 128 (bit-shift-right (:pitch-bend state) 7))}
+                                        ShortMessage/PITCH_BEND (min 128 (bit-shift-right (+ 8192 (:pitch-bend state)) 7))}
                                        (:message-type state) 0)
                             track (aget (.getTracks (.getSequence (:sequencer state))) (:track state))]
                         (when (= (count notes) (count (:notes state)))
