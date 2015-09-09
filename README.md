@@ -25,7 +25,7 @@ Now you can start making music!
 How it works
 ============
 
-```semitone``` is a DSL language written in clojure specifically designed for writing MIDI-based music compositions. It is designed to allow users to compose music in a traditional music notation style, but being a DSL, it is flexible enough to allow any kind of algorithmic music generation as well. ```semitone``` makes use of the built-in Java real time sequencer code for MIDI sequencing and playback. When users call the ```(play)``` function, the DSL language is converted into ```MIDIEvent``` objects, which are put into the Java sequencer's ```Track``` objects.
+```semitone``` is a DSL language written in clojure specifically designed for writing MIDI-based music compositions. It is designed to allow users to compose music in a traditional music notation style, but being a DSL, it is flexible enough to allow any kind of algorithmic music generation as well. ```semitone``` makes use of the built-in Java real time sequencer code for MIDI sequencing and playback (See Big Caveat section at bottom of document). When users call the ```(play)``` function, the DSL language is converted into ```MIDIEvent``` objects, which are put into the Java sequencer's ```Track``` objects.
 
 The ```semitone``` language
 ===========================
