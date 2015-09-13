@@ -13,6 +13,7 @@ Make sure you have ```boot-clj``` installed, e.g. ```brew install boot-clj```. T
 ```
 git clone https://github.com/benwbooth/semitone.git
 cd semitone
+boot build
 boot repl
 ```
 
