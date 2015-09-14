@@ -285,11 +285,11 @@
   (let [sequence (or sequence *seq*)
         synth (or synth *synth*)
         sequencer (SemitoneSequencer.)]
-    (.addMetaEventListener sequencer
-                           (reify MetaEventListener
-                             (meta [meta]
-                               (when (= (.getType meta) 0x51)
-                                 (.setTempoInMPQ sequencer (float (.getInt (.put (ByteBuffer/allocate 4) (.getData meta) 1 3))))))))
+    ;;(.addMetaEventListener sequencer
+    ;;                       (reify MetaEventListener
+    ;;                         (meta [meta]
+    ;;                           (when (= (.getType meta) 0x51)
+    ;;                             (.setTempoInMPQ sequencer (float (.getInt (.put (ByteBuffer/allocate 4) (.getData meta) 1 3))))))))
     (.setSequence sequencer sequence)
     (.createTrack (.getSequence sequencer))
     (.open sequencer)
